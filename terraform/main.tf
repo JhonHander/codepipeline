@@ -127,21 +127,22 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-# Application Load Balancer
-resource "aws_lb" "main" {
-  name               = "codepipe-alb"
+# Application Load Balancer - Staging
+resource "aws_lb" "staging" {
+  name               = "codepipe-alb-staging"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
   subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
 
   tags = {
-    Name = "codepipe-alb"
+    Name        = "codepipe-alb-staging"
+    Environment = "staging"
   }
 }
 
-resource "aws_lb_target_group" "app" {
-  name        = "codepipe-tg"
+resource "aws_lb_target_group" "staging" {
+  name        = "codepipe-tg-staging"
   port        = 80
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
@@ -160,18 +161,69 @@ resource "aws_lb_target_group" "app" {
   }
 
   tags = {
-    Name = "codepipe-tg"
+    Name        = "codepipe-tg-staging"
+    Environment = "staging"
   }
 }
 
-resource "aws_lb_listener" "app" {
-  load_balancer_arn = aws_lb.main.arn
+resource "aws_lb_listener" "staging" {
+  load_balancer_arn = aws_lb.staging.arn
   port              = "80"
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.staging.arn
+  }
+}
+
+# Application Load Balancer - Production
+resource "aws_lb" "production" {
+  name               = "codepipe-alb-prod"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+
+  tags = {
+    Name        = "codepipe-alb-production"
+    Environment = "production"
+  }
+}
+
+resource "aws_lb_target_group" "production" {
+  name        = "codepipe-tg-prod"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/api/status"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name        = "codepipe-tg-production"
+    Environment = "production"
+  }
+}
+
+resource "aws_lb_listener" "production" {
+  load_balancer_arn = aws_lb.production.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.production.arn
   }
 }
 
@@ -281,9 +333,9 @@ resource "aws_ecs_task_definition" "app" {
   }
 }
 
-# ECS Service
-resource "aws_ecs_service" "app" {
-  name            = "codepipe-service"
+# ECS Service - Staging
+resource "aws_ecs_service" "staging" {
+  name            = "codepipe-service-staging"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = 1
@@ -296,14 +348,43 @@ resource "aws_ecs_service" "app" {
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.staging.arn
     container_name   = "aws-demo-app"
     container_port   = 80
   }
 
-  depends_on = [aws_lb_listener.app]
+  depends_on = [aws_lb_listener.staging]
 
   tags = {
-    Name = "codepipe-service"
+    Name        = "codepipe-service-staging"
+    Environment = "staging"
+  }
+}
+
+# ECS Service - Production
+resource "aws_ecs_service" "production" {
+  name            = "codepipe-service-production"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.app.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    subnets          = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.production.arn
+    container_name   = "aws-demo-app"
+    container_port   = 80
+  }
+
+  depends_on = [aws_lb_listener.production]
+
+  tags = {
+    Name        = "codepipe-service-production"
+    Environment = "production"
   }
 }

@@ -1,0 +1,14 @@
+# Copia este archivo a terraform.tfvars y completa los valores
+
+aws_region = "us-east-1"
+
+# ARN de la conexión de GitHub en CodeStar Connections
+# Debes crear esta conexión primero en la consola de AWS:
+# https://console.aws.amazon.com/codesuite/settings/connections
+github_connection_arn = "arn:aws:codestar-connections:us-east-1:YOUR_ACCOUNT_ID:connection/YOUR_CONNECTION_ID"
+
+# Tu repositorio de GitHub en formato owner/repo
+github_repository = "JhonHander/codepipe"
+
+# Rama a monitorear
+github_branch = "main"
