@@ -109,8 +109,8 @@ resource "aws_security_group" "ecs_tasks" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 80
-    to_port         = 80
+    from_port       = 3000
+    to_port         = 3000
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
@@ -143,7 +143,7 @@ resource "aws_lb" "staging" {
 
 resource "aws_lb_target_group" "staging" {
   name        = "codepipe-tg-staging"
-  port        = 80
+  port        = 3000
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
@@ -154,7 +154,7 @@ resource "aws_lb_target_group" "staging" {
     interval            = 30
     matcher             = "200"
     path                = "/api/status"
-    port                = "traffic-port"
+    port                = "3000"
     protocol            = "HTTP"
     timeout             = 5
     unhealthy_threshold = 2
@@ -193,7 +193,7 @@ resource "aws_lb" "production" {
 
 resource "aws_lb_target_group" "production" {
   name        = "codepipe-tg-prod"
-  port        = 80
+  port        = 3000
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"
@@ -204,7 +204,7 @@ resource "aws_lb_target_group" "production" {
     interval            = 30
     matcher             = "200"
     path                = "/api/status"
-    port                = "traffic-port"
+    port                = "3000"
     protocol            = "HTTP"
     timeout             = 5
     unhealthy_threshold = 2
@@ -273,6 +273,43 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# IAM Role para ECS Task (runtime role)
+resource "aws_iam_role" "ecs_task_role" {
+  name = "codepipe-ecs-task-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_role_policy" {
+  role = aws_iam_role.ecs_task_role.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/codepipe-app"
@@ -291,6 +328,7 @@ resource "aws_ecs_task_definition" "app" {
   cpu                      = "256"
   memory                   = "512"
   execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
 
   container_definitions = jsonencode([
     {
@@ -300,8 +338,8 @@ resource "aws_ecs_task_definition" "app" {
 
       portMappings = [
         {
-          containerPort = 80
-          hostPort      = 80
+          containerPort = 3000
+          hostPort      = 3000
           protocol      = "tcp"
         }
       ]
@@ -322,7 +360,7 @@ resource "aws_ecs_task_definition" "app" {
         },
         {
           name  = "PORT"
-          value = "80"
+          value = "3000"
         }
       ]
     }
@@ -350,7 +388,7 @@ resource "aws_ecs_service" "staging" {
   load_balancer {
     target_group_arn = aws_lb_target_group.staging.arn
     container_name   = "aws-demo-app"
-    container_port   = 80
+    container_port   = 3000
   }
 
   depends_on = [aws_lb_listener.staging]
@@ -378,7 +416,7 @@ resource "aws_ecs_service" "production" {
   load_balancer {
     target_group_arn = aws_lb_target_group.production.arn
     container_name   = "aws-demo-app"
-    container_port   = 80
+    container_port   = 3000
   }
 
   depends_on = [aws_lb_listener.production]
